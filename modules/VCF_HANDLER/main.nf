@@ -1,6 +1,6 @@
 process VCF_HANDLER
 {
-  tag "${vcfs[1]}, ${vcfs[3]}"
+  tag "${vcfs[0]}, ${vcfs[2]}"
   debug true
   publishDir params.outdir, mode:'copy'
 
@@ -17,17 +17,22 @@ process VCF_HANDLER
     val maf_file
     val maf_file_tbi
   output:
-    path "*.file"
+    path "*.filtered.vcf"
+    path "*.opencga.vcf"
+    path "*_split_filevep.vcf"
+    path "*_allgenesvep.vcf"
+    path "*_allgenes_bsvi.vcf"
+    path "*_allgenes.tsv"
+    path "*_panels.xlsx"
 
 // will need to see how the vcfs are passed to the process and sort how they are passed to nextflow code
   script:
     """
-    echo "hello"
-    echo ${vcfs[1]}
-    echo ${vcfs[2]}
-    echo ${vcfs[3]}
-    echo ${vcfs[4]}
-    bash nextflow-bin/nextflow_code.sh  ${vcfs[1]} ${vcfs[2]} ${vcfs[3]} ${vcfs[4]} $mutect2_bed $pindel_bed $mutect2_fasta $mutect2_fai $vep_docker_image $vep_plugins $vep_refs $vep_annotation $maf_file $maf_file_tbi
 
+    echo "running tool"
+
+    bash nextflow-bin/nextflow_code.sh  ${vcfs[0]} ${vcfs[1]} ${vcfs[2]} ${vcfs[3]} $mutect2_bed $pindel_bed $mutect2_fasta $mutect2_fai $vep_docker_image "$vep_plugins" "$vep_refs" "$vep_annotation" $maf_file $maf_file_tbi
+
+    ls
     """
 }
