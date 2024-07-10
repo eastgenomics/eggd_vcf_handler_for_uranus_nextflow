@@ -15,16 +15,14 @@ mkdir vep_annot
 
 mutect2_vcf_path="$1"
 mutect2_vcf_path_tbi="$2"
-pindel_vcf_name="$3"
-pindel_vcf_name_tbi="$4"
+pindel_vcf_path="$3"
+pindel_vcf_path_tbi="$4"
 mutect2_bed_path="$5"
 pindel_bed_path="$6"
 mutect2_fasta_path="$7"
 mutect2_fai="$8"
 vep_docker_path="$9"
-echo "testing format"
 vep_plugins=${10}
-
 # returned in format project-Fkb6Gkj433GVVvj73J7x8KbV:{file-G61zfvj433GxkQXF414xP1yF,file-G620928433Gy9p2b27zb8JFV}
 plugin_project="$(echo "$vep_plugins" | cut -d "{" -f 1)"
 	#  (makes list of files separated by line)
@@ -34,7 +32,9 @@ for file in $files_list; do
 	plugin_path=${plugin_project}${file}
 	echo "downloading plugins"
 	echo "${plugin_path}"
-	dx download "${plugin_path}" -o "vep_plugins"
+	plugin_name=$(dx describe "${plugin_path}" --name)
+	dx download "${plugin_path}" -o "${plugin_name}"
+	mv "${plugin_name}" vep_plugins/
 done
 
 vep_refs="${11}"
@@ -45,11 +45,15 @@ for file in $files_list; do
 	file="${file//"}"/}"
 	ref_path=${ref_project}${file}
 	echo "downloading references"
-	echo "${ref_path}"
-	dx download "${ref_path}" -o "vep_refs"
+	ref_name=$(dx describe "${ref_path}" --name)
+	dx download "${ref_path}" -o "${ref_name}"
+	mv "${ref_name}" vep_refs/
 done
 
 vep_annotation="${12}"
+
+# will likely need to reformat - currently will work if all annotation in same project
+# will change so expected format is project-xxxx:file-xxxx for all annot rather than project-xxx:{file-xxx,file-yyy}
 annot_project="$(echo "$vep_annotation" | cut -d "{" -f 1)"
 files_list="$(echo "$vep_annotation" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
@@ -57,16 +61,17 @@ for file in $files_list; do
 	annot_path=${annot_project}${file}
 	echo "downloading annotations"
 	echo "${annot_path}"
-	dx download "${annot_path}" -o "vep_annot"
+	annot_name=$(dx describe "${annot_path}" --name)
+	dx download "${annot_path}" -o "${annot_name}"
+	mv "${annot_name}" vep_annot/
 done
 
 maf_file_path="${13}"
 maf_file_tbi_path="${14}"
-
+mutec2_project_path="${15}"
+pindel_project_path="${16}"
 
 pathToBin="nextflow-bin"
-pindel_vcf_prefix="${pindel_vcf_name%%.*}"
-mutect2_vcf_prefix="${mutect2_vcf_path%%.*}"
 
 function annotate_vep_vcf {
 	# Function to run VEP for annotation on given VCF file
@@ -105,7 +110,7 @@ function annotate_vep_vcf {
 	--custom /opt/vep/.vep/"${cosmic_non_coding}",COSMIC,vcf,exact,0,ID \
 	--plugin CADD,/opt/vep/.vep/"${cadd_snv}",/opt/vep/.vep/"${cadd_indel}" \
 	--fields "$filter_fields" \
-	--fork $(nproc --all) \
+	--fork "$(nproc --all)" \
 	--no_stats
 }
 
@@ -146,24 +151,18 @@ function filter_vep_vcf {
 
 set -e -x -v -o pipefail
 
-dx download -r project-Fkb6Gkj433GVVvj73J7x8KbV:/app_assets/htslib/htslib_v1.14.0/ -o nextflow-bin
-dx download -r project-Fkb6Gkj433GVVvj73J7x8KbV:/app_assets/bedtools/bedtools_v2.30.0/ -o nextflow-bin
+
+#ls nextflow-bin/bedtools_v2.30.0
+mv ${pathToBin}/bedtools.static.binary ${pathToBin}/bedtools
+chmod a+x ${pathToBin}/bedtools
+export BEDTOOLS=${pathToBin}/bedtools
+export PATH=$pathToBin:$PATH
 
 ls
 
-#ls nextflow-bin/bedtools_v2.30.0
-export BEDTOOLS=${pathToBin}/bedtools*
-tar -jxvf $BEDTOOLS
-cd bedtools_v2.30.0
-make
-make install
-export PATH=$pathToBin:$PATH
-cd ..
-# ls
-
 
 #ls nextflow-bin/bcftools-1.18
-export BCFTOOLS=${pathToBin}/bcftools-1.18*
+export BCFTOOLS="${pathToBin}/bcftools-1.18*"
 tar -jxvf $BCFTOOLS
 cd bcftools-1.18
 make
@@ -175,19 +174,36 @@ cd ..
 
 bash ${pathToBin}/mark-section "downloading inputs"
 
+prefix="dx://"
+mutec2_project_path=${mutec2_project_path#"$prefix"}
+pindel_project_path=${pindel_project_path#"$prefix"}
 
-#dx download $mutect2_vcf_path
-#dx download $mutect2_vcf_path_tbi
-#dx download $pindel_vcf_name
-#dx download $pindel_vcf_name_tbi
+# what are the file names
 
-dx download $mutect2_bed_path
-dx download $pindel_bed_path
-dx download $mutect2_fasta_path
-dx download $mutect2_fai
-dx download $vep_docker_path
-dx download $maf_file_path
-dx download $maf_file_tbi_path
+mutect2_bed_name=$(dx describe $mutect2_bed_path --name)
+pindel_bed_name=$(dx describe $pindel_bed_path --name)
+mutect2_fasta_name=$(dx describe $mutect2_fasta_path --name)
+mutect2_fai_name=$(dx describe $mutect2_fai --name)
+vep_docker_name=$(dx describe $vep_docker_path --name)
+maf_file_name=$(dx describe $maf_file_path --name)
+maf_file_tbi_name=$(dx describe $maf_file_tbi_path --name)
+
+# will need to fix, maybe change handling of inputs? cuttently mutect_vcf_path is just a file name
+dx download $mutec2_project_path/$mutect2_vcf_path -o $mutect2_vcf_path --overwrite
+dx download $mutec2_project_path/$mutect2_vcf_path_tbi -o $mutect2_vcf_path_tbi --overwrite
+dx download $pindel_project_path/$pindel_vcf_path -o $pindel_vcf_path --overwrite
+dx download $pindel_project_path/$pindel_vcf_path_tbi -o $pindel_vcf_path_tbi --overwrite
+
+dx download $mutect2_bed_path -o $mutect2_bed_name
+dx download $pindel_bed_path -o $pindel_bed_name
+dx download $mutect2_fasta_path -o $mutect2_fasta_name
+dx download $mutect2_fai -o $mutect2_fai_name
+dx download $vep_docker_path -o $vep_docker_name
+dx download $maf_file_path -o $maf_file_name
+dx download $maf_file_tbi_path -o $maf_file_tbi_name
+
+pindel_vcf_prefix="${pindel_vcf_path%%.*}"
+mutect2_vcf_prefix="${mutect2_vcf_path%%.*}"
 
 ls
 # move maf file and index to home for vep to find
@@ -216,11 +232,11 @@ bash ${pathToBin}/mark-section "filtering mutect2 VCF"
 	# bedtools and bcftools are app assets
 splitfile="${mutect2_vcf_prefix}_split.vcf"
 
-$BEDTOOLS intersect -header -u -a "${mutect2_vcf_path}" -b "${mutect2_bed_path}" \
-| $BCFTOOLS norm -f "${mutect2_fasta_path}" -m -any --keep-sum AD - \
-| $BCFTOOLS view -i "FORMAT/AF[*]>0.03" - \
-| $BCFTOOLS view -i "FORMAT/DP>99" - \
--o ~/"${splitfile}"
+bedtools intersect -header -u -a "${mutect2_vcf_path}" -b "${mutect2_bed_name}" \
+| bcftools norm -f "${mutect2_fasta_name}" -m -any --keep-sum AD - \
+| bcftools view -i "FORMAT/AF[*]>0.03" - \
+| bcftools view -i "FORMAT/DP>99" - \
+-o "${splitfile}"
 
 bash ${pathToBin}/mark-section "filtering pindel VCF"
 	# Filtering of pindel vcf for:
@@ -230,16 +246,16 @@ bash ${pathToBin}/mark-section "filtering pindel VCF"
 #mv /home/dnanexus/in/pindel_vcf/* /home/dnanexus
 #mv /home/dnanexus/in/pindel_vcf_idx/* /home/dnanexus
 
-$BCFTOOLS view -R $pindel_bed_path $pindel_vcf_name > "${pindel_vcf_prefix}.tmp.vcf"
+bcftools view -R $pindel_bed_name $pindel_vcf_path > "${pindel_vcf_prefix}.tmp.vcf"
 
 pindel_filtered_vcf="${pindel_vcf_prefix}.filtered.vcf"
-$BCFTOOLS view -i 'INFO/LEN > 2' "${pindel_vcf_prefix}.tmp.vcf" > $pindel_filtered_vcf
+bcftools view -i 'INFO/LEN > 2' "${pindel_vcf_prefix}.tmp.vcf" > $pindel_filtered_vcf
 
 
 	# add tags required for openCGA
 	# write these to separate filtered but unannotated VCFs for uploading
 bash ${pathToBin}/mark-section "Adding SAMPLE tags to VCF headers"
-sample_id=$(echo $mutect2_vcf_name | cut -d'-' -f1)  # the id to add to the vcfs
+sample_id=$(echo $mutect2_vcf_prefix | cut -d'-' -f1)  # the id to add to the vcfs
 
 	# add sample id to mutect2 vcf on line before ##tumour_sample in header
 	# no SAMPLE line already present so create one from full name and ID we want
@@ -247,7 +263,7 @@ mutect2_column_name=$(grep "#CHROM" "$splitfile" | cut -f10)
 sample_field="##SAMPLE=<ID=${mutect2_column_name},SampleName=${sample_id}>"
 
 zgrep "^#" "$splitfile" | sed s"/^##tumor_sample/${sample_field}\n&/" > mutect2.header
-$BCFTOOLS reheader -h mutect2.header "$splitfile" > "${mutect2_vcf_prefix}.opencga.vcf"
+bcftools reheader -h mutect2.header "$splitfile" > "${mutect2_vcf_prefix}.opencga.vcf"
 
 	# modify SampleName for tumour sample line to correctly link to our sample ID
 tumour_sample=$(grep "##SAMPLE=<ID=TUMOUR" "$pindel_filtered_vcf")
@@ -256,25 +272,27 @@ header_line=$(sed s"/SampleName=[A-Za-z0-9\_\-]*/SampleName=${sample_id}/" <<< $
 zgrep "^#" "$pindel_filtered_vcf" \
 	| sed s"/^##SAMPLE=<ID=TUMOUR.*/${header_line}/" > pindel.header
 
-$BCFTOOLS reheader -h pindel.header "$pindel_filtered_vcf" > "${pindel_vcf_prefix}.opencga.vcf"
+bcftools reheader -h pindel.header "$pindel_filtered_vcf" > "${pindel_vcf_prefix}.opencga.vcf"
 
+ls vep_refs
 
 bash ${pathToBin}/mark-section "annotating and further filtering"
 	# permissions to write to /home/dnanexus
 chmod a+rwx /home/dnanexus
 
+
 	# extract vep reference annotation tarball to /home/dnanexus
-time tar xf "*.tar.gz"
+time tar xf vep_refs/*.tar.gz
 
 	# place fasta and indexes for VEP in the annotation folder
 # mv /home/dnanexus/in/vep_refs/*fa.gz* ~/homo_sapiens_refseq/103_GRCh38/
 
 	# place plugins into plugins folder
-mkdir ~/Plugins
-mv vep_plugins/* ~/Plugins/
+# mkdir Plugins
+# mv vep_plugins/* ~/Plugins/
 
 	# load vep docker
-docker load -i "$vep_docker_path"
+docker load -i "$vep_docker_name"
 
 	# will run VEP to annotate against specified transcripts for all,
 	# lymphoid and myeloid gene lists

@@ -16,6 +16,8 @@ process VCF_HANDLER
     val vep_annotation
     val maf_file
     val maf_file_tbi
+    val mutec2_vcf_path
+    val pindel_vcf_path
   output:
     path "*.filtered.vcf"
     path "*.opencga.vcf"
@@ -30,8 +32,7 @@ process VCF_HANDLER
     """
 
     echo "running tool"
-
-    bash nextflow-bin/nextflow_code.sh  ${vcfs[0]} ${vcfs[1]} ${vcfs[2]} ${vcfs[3]} $mutect2_bed $pindel_bed $mutect2_fasta $mutect2_fai $vep_docker_image "$vep_plugins" "$vep_refs" "$vep_annotation" $maf_file $maf_file_tbi
+    bash nextflow-bin/nextflow_code.sh  ${vcfs[0]} ${vcfs[1]} ${vcfs[2]} ${vcfs[3]} $mutect2_bed $pindel_bed $mutect2_fasta $mutect2_fai $vep_docker_image "$vep_plugins" "$vep_refs" "$vep_annotation" $maf_file $maf_file_tbi $mutec2_vcf_path $pindel_vcf_path
 
     ls
     """
