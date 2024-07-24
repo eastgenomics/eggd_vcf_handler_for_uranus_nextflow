@@ -18,6 +18,8 @@ workflow{
   vcf_pairs_ch = channel.fromFilePairs( ["$mutec2_path", "$pindel_path"], size: -1)
 
   // I want to have a channel of pairs of these
-  VCF_HANDLER(vcf_pairs_ch, params.mutect2_bed, params.pindel_bed, params.mutect2_fasta, params.mutect2_fai, params.vep_docker_image, params.vep_plugins, params.vep_refs, params.vep_annotation, params.maf_file, params.maf_file_tbi, params.mutec2_vcf_path, params.pindel_vcf_path)
+
+  // run the tool
+  VCF_HANDLER(vcf_pairs_ch, params.mutect2_bed, params.pindel_bed, params.mutect2_fasta, params.mutect2_fai, params.vep_docker_image, params.vep_plugins, params.vep_refs, params.vep_annotation, params.maf_file, params.maf_file_tbi, params.mutec2_vcf_path, params.pindel_vcf_path, params.python_packages)
 }
 

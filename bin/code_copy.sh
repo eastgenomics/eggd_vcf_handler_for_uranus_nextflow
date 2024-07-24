@@ -304,14 +304,14 @@ main() {
 	mark-section "uploading output"
 
 	# make required output directories and move files
-	mkdir -p ~/out/allgenes_filtered_vcf ~/out/bsvi_vcf ~/out/text_report \
-		~/out/excel_report ~/out/pindel_vep_vcf
+	mkdir -p out/allgenes_filtered_vcf out/bsvi_vcf out/text_report \
+		out/excel_report out/pindel_vep_vcf
 
-	mv ~/"${pindelvepfile}" ~/out/pindel_vep_vcf/
-	mv ~/"${allgenesvepfile}" ~/out/allgenes_filtered_vcf/
-	mv ~/"${mutect2_vcf_prefix}_bsvi.vcf" ~/out/bsvi_vcf/
-	mv ~/"${mutect2_vcf_prefix}_allgenes.tsv" ~/out/text_report/
-	mv ~/"${mutect2_vcf_prefix}_panels.xlsx" ~/out/excel_report/
+	mv "${pindelvepfile}" out/pindel_vep_vcf/
+	mv "${allgenesvepfile}" out/allgenes_filtered_vcf/
+	mv "${mutect2_vcf_prefix}_bsvi.vcf" out/bsvi_vcf/
+	mv "${mutect2_vcf_prefix}_allgenes.tsv" out/text_report/
+	mv "${mutect2_vcf_prefix}_panels.xlsx" out/excel_report/
 
 	dx-upload-all-outputs --parallel
 	mark-success

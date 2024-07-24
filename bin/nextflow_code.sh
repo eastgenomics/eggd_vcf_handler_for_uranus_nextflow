@@ -12,6 +12,7 @@ echo "Reading inputs"
 mkdir vep_plugins
 mkdir vep_refs
 mkdir vep_annot
+mkdir python_packages
 
 mutect2_vcf_path="$1"
 mutect2_vcf_path_tbi="$2"
@@ -22,29 +23,29 @@ pindel_bed_path="$6"
 mutect2_fasta_path="$7"
 mutect2_fai="$8"
 vep_docker_path="$9"
-vep_plugins=${10}
+vep_plugins="${10}"
+
+echo "downloading VEP plugins"
 # returned in format project-Fkb6Gkj433GVVvj73J7x8KbV:{file-G61zfvj433GxkQXF414xP1yF,file-G620928433Gy9p2b27zb8JFV}
+
 plugin_project="$(echo "$vep_plugins" | cut -d "{" -f 1)"
-	#  (makes list of files separated by line)
+#  (makes list of files separated by line)
 files_list="$(echo "$vep_plugins" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
 	file="${file//"}"/}"
 	plugin_path=${plugin_project}${file}
-	echo "downloading plugins"
-	echo "${plugin_path}"
 	plugin_name=$(dx describe "${plugin_path}" --name)
 	dx download "${plugin_path}" -o "${plugin_name}"
 	mv "${plugin_name}" vep_plugins/
 done
 
+echo "downloading VEP references"
 vep_refs="${11}"
 ref_project="$(echo "$vep_refs" | cut -d "{" -f 1)"
-	#  (makes list of files separated by line)
 files_list="$(echo "$vep_refs" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
 	file="${file//"}"/}"
 	ref_path=${ref_project}${file}
-	echo "downloading references"
 	ref_name=$(dx describe "${ref_path}" --name)
 	dx download "${ref_path}" -o "${ref_name}"
 	mv "${ref_name}" vep_refs/
@@ -52,6 +53,7 @@ done
 
 vep_annotation="${12}"
 
+echo "downloading VEP annotations"
 # will likely need to reformat - currently will work if all annotation in same project
 # will change so expected format is project-xxxx:file-xxxx for all annot rather than project-xxx:{file-xxx,file-yyy}
 annot_project="$(echo "$vep_annotation" | cut -d "{" -f 1)"
@@ -59,8 +61,6 @@ files_list="$(echo "$vep_annotation" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
 	file="${file//"}"/}"
 	annot_path=${annot_project}${file}
-	echo "downloading annotations"
-	echo "${annot_path}"
 	annot_name=$(dx describe "${annot_path}" --name)
 	dx download "${annot_path}" -o "${annot_name}"
 	mv "${annot_name}" vep_annot/
@@ -70,6 +70,19 @@ maf_file_path="${13}"
 maf_file_tbi_path="${14}"
 mutec2_project_path="${15}"
 pindel_project_path="${16}"
+python_packages="${17}"
+
+echo "downloading python packages"
+package_project="$(echo "$python_packages" | cut -d "{" -f 1)"
+files_list="$(echo "$python_packages" | cut -d "{" -f 2 | sed 's/,/\n/g')"
+for file in $files_list; do
+	file="${file//"}"/}"
+	package_path=${package_project}${file}
+	package_name=$(dx describe "${package_path}" --name)
+	dx download "${package_path}" -o "${package_name}"
+	mv "${package_name}" python_packages/
+done
+
 
 pathToBin="nextflow-bin"
 
@@ -98,12 +111,16 @@ function annotate_vep_vcf {
 	cadd_snv=$(find ./ -name "*SNVs.tsv.gz")
 	cadd_indel=$(find ./ -name "*indel.tsv.gz")
 
-	time docker run -v /home/dnanexus:/opt/vep/.vep \
+	chmod -R a+rwx .
+
+	time docker run -v ./:/opt/vep/.vep \
 	ensemblorg/ensembl-vep:release_103.1 \
 	./vep -i /opt/vep/.vep/"${input_vcf}" -o /opt/vep/.vep/"${output_vcf}" \
 	--vcf --cache --refseq --exclude_predicted --symbol --hgvs --af_gnomad \
 	--check_existing --variant_class --numbers \
 	--offline \
+	--dir_cache "/opt/vep/.vep/" \
+	--dir_plugins "/opt/vep/.vep/vep_plugins" \
 	--custom /opt/vep/.vep/"${clinvar_vcf}",ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT,CLNDN \
 	--custom /opt/vep/.vep/"${maf_file_name}",Prev,vcf,exact,0,AC,NS \
 	--custom /opt/vep/.vep/"${cosmic_coding}",COSMIC,vcf,exact,0,ID \
@@ -138,10 +155,11 @@ function filter_vep_vcf {
 	transcript_list=$(echo "$transcript_list" | sed 's/,/ or Feature match /g')
 	transcript_list="(Feature match ${transcript_list})"
 
-	time docker run -v /home/dnanexus:/opt/vep/.vep \
+
+	time docker run -v ./:/opt/vep/.vep \
 	ensemblorg/ensembl-vep:release_103.1 \
-	./filter_vep -i /opt/vep/.vep/"$input_vcf" \
-	-o /opt/vep/.vep/"$output_vcf" --only_matched --filter \
+	./filter_vep -i /opt/vep/.vep/"${input_vcf}" \
+	-o /opt/vep/.vep/"${output_vcf}" --only_matched --filter \
 	"(gnomAD_AF < 0.10 or not gnomAD_AF) and $transcript_list"
 
 	# split VCF annotation to separate records where more than one transcript of annotation is present
@@ -151,17 +169,13 @@ function filter_vep_vcf {
 
 set -e -x -v -o pipefail
 
+bash ${pathToBin}/mark-section "Set up bedtools and bcftools"
 
-#ls nextflow-bin/bedtools_v2.30.0
 mv ${pathToBin}/bedtools.static.binary ${pathToBin}/bedtools
 chmod a+x ${pathToBin}/bedtools
 export BEDTOOLS=${pathToBin}/bedtools
 export PATH=$pathToBin:$PATH
 
-ls
-
-
-#ls nextflow-bin/bcftools-1.18
 export BCFTOOLS="${pathToBin}/bcftools-1.18*"
 tar -jxvf $BCFTOOLS
 cd bcftools-1.18
@@ -188,7 +202,6 @@ vep_docker_name=$(dx describe $vep_docker_path --name)
 maf_file_name=$(dx describe $maf_file_path --name)
 maf_file_tbi_name=$(dx describe $maf_file_tbi_path --name)
 
-# will need to fix, maybe change handling of inputs? cuttently mutect_vcf_path is just a file name
 dx download $mutec2_project_path/$mutect2_vcf_path -o $mutect2_vcf_path --overwrite
 dx download $mutec2_project_path/$mutect2_vcf_path_tbi -o $mutect2_vcf_path_tbi --overwrite
 dx download $pindel_project_path/$pindel_vcf_path -o $pindel_vcf_path --overwrite
@@ -205,20 +218,6 @@ dx download $maf_file_tbi_path -o $maf_file_tbi_name
 pindel_vcf_prefix="${pindel_vcf_path%%.*}"
 mutect2_vcf_prefix="${mutect2_vcf_path%%.*}"
 
-ls
-# move maf file and index to home for vep to find
-# what are the paths
-
-#mv "${maf_file_path}" /home/dnanexus/
-#mv "${maf_file_tbi_path}" /home/dnanexus/
-
-# array inputs end up in subdirectories (i.e. ~/in/array-input/0/), flatten to parent dir
-#find vep_plugins -type f -name "*" -print0 | xargs -0 -I {} mv {} vep_plugins
-#find vep_refs -type f -name "*" -print0 | xargs -0 -I {} mv {} vep_refs
-#find vep_annot -type f -name "*" -print0 | xargs -0 -I {} mv {} vep_annot
-
-# move annotation sources to home
-# mv ~/in/vep_annotation/* /home/dnanexus/
 
 bash ${pathToBin}/mark-section "filtering mutect2 VCF"
 	# retain variants that are: # within ROIs (mutect2_bed file),
@@ -274,7 +273,6 @@ zgrep "^#" "$pindel_filtered_vcf" \
 
 bcftools reheader -h pindel.header "$pindel_filtered_vcf" > "${pindel_vcf_prefix}.opencga.vcf"
 
-ls vep_refs
 
 bash ${pathToBin}/mark-section "annotating and further filtering"
 	# permissions to write to /home/dnanexus
@@ -283,9 +281,10 @@ chmod a+rwx /home/dnanexus
 
 	# extract vep reference annotation tarball to /home/dnanexus
 time tar xf vep_refs/*.tar.gz
+chmod a+rwx /home/dnanexus
 
 	# place fasta and indexes for VEP in the annotation folder
-# mv /home/dnanexus/in/vep_refs/*fa.gz* ~/homo_sapiens_refseq/103_GRCh38/
+mv vep_refs/*fa.gz* homo_sapiens_refseq/103_GRCh38/
 
 	# place plugins into plugins folder
 # mkdir Plugins
@@ -410,11 +409,14 @@ filter_vep_vcf "$pindel_annotated" "$pindelvepfile" "$pindel_transcripts"
 bash ${pathToBin}/mark-section "BSVI workaround (overwriting GT) and creating variant list"
 
 	# install required python packages (asset)
-pip3 install /pytz-*.whl /numpy-*.whl /pandas-*.whl /XlsxWriter-*.whl
+
+pip3 install python_packages/pytz-*.whl python_packages/numpy-*.whl python_packages/pandas-*.whl python_packages/XlsxWriter-*.whl
+	# recieved error with this path, can't find because different NF paths
+	# When just installing caused issues with dataframes because latest versions installed and pandas has depreciated
 
 	# call Python script (asset) to spit multiallelics, generate BSVI VCF and excel report
 	# note that order of VCFs passed to -v determines order of sheets in excel
-/usr/bin/time -v python3 vcf_handler.py -a "${allgenesvepfile}" \
+/usr/bin/time -v python3 ${pathToBin}/vcf_handler.py -a "${allgenesvepfile}" \
 -v "${myeloidvepfile}" "${cllvepfile}" "${tp53vepfile}" "${lglvepfile}" \
 "${hclvepfile}" "${lplvepfile}" "${lymphoidvepfile}" "${t_nhlvepfile}" \
 "${plasma_cell_myelomavepfile}" -p "$pindelvepfile"
@@ -422,15 +424,15 @@ pip3 install /pytz-*.whl /numpy-*.whl /pandas-*.whl /XlsxWriter-*.whl
 bash ${pathToBin}/mark-section "uploading output"
 
 	# make required output directories and move files
-mkdir -p ~/out/allgenes_filtered_vcf ~/out/bsvi_vcf ~/out/text_report \
-	~/out/excel_report ~/out/pindel_vep_vcf
+mkdir -p out/allgenes_filtered_vcf out/bsvi_vcf out/text_report \
+	out/excel_report out/pindel_vep_vcf
 
-mv ~/"${pindelvepfile}" ~/out/pindel_vep_vcf/
-mv ~/"${allgenesvepfile}" ~/out/allgenes_filtered_vcf/
-mv ~/"${mutect2_vcf_prefix}_bsvi.vcf" ~/out/bsvi_vcf/
-mv ~/"${mutect2_vcf_prefix}_allgenes.tsv" ~/out/text_report/
-mv ~/"${mutect2_vcf_prefix}_panels.xlsx" ~/out/excel_report/
+mv "${pindelvepfile}" out/pindel_vep_vcf/
+mv "${allgenesvepfile}" out/allgenes_filtered_vcf/
+mv "${mutect2_vcf_prefix}_bsvi.vcf" out/bsvi_vcf/
+mv "${mutect2_vcf_prefix}_allgenes.tsv" out/text_report/
+mv "${mutect2_vcf_prefix}_panels.xlsx" out/excel_report/
 
-dx-upload-all-outputs --parallel
+# dx-upload-all-outputs --parallel
 bash ${pathToBin}/mark-success
 
