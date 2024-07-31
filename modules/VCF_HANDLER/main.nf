@@ -1,8 +1,13 @@
 process VCF_HANDLER
 {
   tag "${vcfs[0]}, ${vcfs[2]}"
-  debug true
+  // debug true
   publishDir params.outdir, mode:'copy'
+  errorStrategy 'finish'
+
+// need to consider best error strategy - terminate (default) means if one task fails, the pipeline is immediately terminated
+// finish means if a task fails the rest of the running taks will finish running, then the pipeline will terminate
+// ignore means all tasks continue and then pipeline finishes successfully
 
   input:
     tuple val(sample_id), path(vcfs)
@@ -27,6 +32,7 @@ process VCF_HANDLER
     path "out/pindel_vep_vcf/*"
 
 // will need to see how the vcfs are passed to the process and sort how they are passed to nextflow code
+// check files/inputs are of expected type
   script:
     """
 

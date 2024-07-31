@@ -28,10 +28,15 @@ vep_plugins="${10}"
 echo "downloading VEP plugins"
 # returned in format project-Fkb6Gkj433GVVvj73J7x8KbV:{file-G61zfvj433GxkQXF414xP1yF,file-G620928433Gy9p2b27zb8JFV}
 
+# keep getting request rate issue, which causes overall process to take longer, adding sleep command to loops
+# <?xml version="1.0" encoding="UTF-8"?><Error><Code>SlowDown</Code><Message>Please reduce your request rate.
+#</Message><RequestId>8HG1V7PQ43J7WA9E</RequestId><HostId>BhNpW/Vl0UQZy4OY/QJHSrnPe6TF3K76PPOdaKVe1+uLOuVJIGKTLKbSRmHPmGk7cmIb8DcPYbQ=</HostId></Error>
+
 plugin_project="$(echo "$vep_plugins" | cut -d "{" -f 1)"
 #  (makes list of files separated by line)
 files_list="$(echo "$vep_plugins" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
+	sleep 1
 	file="${file//"}"/}"
 	plugin_path=${plugin_project}${file}
 	plugin_name=$(dx describe "${plugin_path}" --name)
@@ -44,6 +49,7 @@ vep_refs="${11}"
 ref_project="$(echo "$vep_refs" | cut -d "{" -f 1)"
 files_list="$(echo "$vep_refs" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
+	sleep 1
 	file="${file//"}"/}"
 	ref_path=${ref_project}${file}
 	ref_name=$(dx describe "${ref_path}" --name)
@@ -59,6 +65,7 @@ echo "downloading VEP annotations"
 annot_project="$(echo "$vep_annotation" | cut -d "{" -f 1)"
 files_list="$(echo "$vep_annotation" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
+	sleep 1
 	file="${file//"}"/}"
 	annot_path=${annot_project}${file}
 	annot_name=$(dx describe "${annot_path}" --name)
@@ -76,6 +83,7 @@ echo "downloading python packages"
 package_project="$(echo "$python_packages" | cut -d "{" -f 1)"
 files_list="$(echo "$python_packages" | cut -d "{" -f 2 | sed 's/,/\n/g')"
 for file in $files_list; do
+	sleep 1
 	file="${file//"}"/}"
 	package_path=${package_project}${file}
 	package_name=$(dx describe "${package_path}" --name)
@@ -176,9 +184,9 @@ chmod a+x ${pathToBin}/bedtools
 export BEDTOOLS=${pathToBin}/bedtools
 export PATH=$pathToBin:$PATH
 
-export BCFTOOLS="${pathToBin}/bcftools-1.18*"
+export BCFTOOLS="${pathToBin}/bcftools-1.12*"
 tar -jxvf $BCFTOOLS
-cd bcftools-1.18
+cd bcftools-1.12
 make
 make install
 export PATH=$pathToBin:$PATH
@@ -201,6 +209,8 @@ mutect2_fai_name=$(dx describe $mutect2_fai --name)
 vep_docker_name=$(dx describe $vep_docker_path --name)
 maf_file_name=$(dx describe $maf_file_path --name)
 maf_file_tbi_name=$(dx describe $maf_file_tbi_path --name)
+
+# if there are issues with the download (ie files does not exist) errors will be thrown here
 
 dx download $mutec2_project_path/$mutect2_vcf_path -o $mutect2_vcf_path --overwrite
 dx download $mutec2_project_path/$mutect2_vcf_path_tbi -o $mutect2_vcf_path_tbi --overwrite
@@ -236,6 +246,18 @@ bedtools intersect -header -u -a "${mutect2_vcf_path}" -b "${mutect2_bed_name}" 
 | bcftools view -i "FORMAT/AF[*]>0.03" - \
 | bcftools view -i "FORMAT/DP>99" - \
 -o "${splitfile}"
+
+# if Lines total/split/realigned/skipped: == 0/0/0/0 from this command then fail (otherwise fails at VEP)
+# This occurs if mutect fasta is not compatible with vcf
+# view the vcf file, find and count the lines that do not start with # (ie don't count header lines)
+# fail informatively if splitfile has 0 variants
+
+n_variants=$(bcftools view -v snps "${splitfile}" |  grep -v -c '^#')
+
+if (( $n_variants == 0 )); then
+	echo "ERROR: Temporary split file ${splitfile} contains 0 variants, check if bedfile and fasta file are compatible with the sample"
+	exit 1;
+fi
 
 bash ${pathToBin}/mark-section "filtering pindel VCF"
 	# Filtering of pindel vcf for:

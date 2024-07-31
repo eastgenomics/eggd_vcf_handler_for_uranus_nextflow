@@ -12,12 +12,30 @@ workflow{
   //dx://project-GkYP7j04F2bPqzq0q881gZk2:/inputs/mutec2
   //dx://project-GkYP7j04F2bPqzq0q881gZk2:/inputs/pindel
 
-  mutec2_path = "$params.mutec2_vcf_path" + "/*_markdup_recalibrated_tnhaplotyper2.vcf.{gz,gz.tbi}"
-  pindel_path = "$params.pindel_vcf_path" + "/*_vs_TA2_S59_L008_tumor.flagged.vcf.{gz,gz.tbi}"
+ // could i check it is in the right format and correct if not?
+mutec2_path = "$params.mutec2_vcf_path" + "/*_markdup_recalibrated_tnhaplotyper2.vcf.{gz,gz.tbi}"
+pindel_path = "$params.pindel_vcf_path" + "/*_vs_TA2_S59_L008_tumor.flagged.vcf.{gz,gz.tbi}"
 
+//if path does not start with dx://, give warning and then add
+if ( !"$mutec2_path".startsWith('dx://') ) {
+  println "$mutec2_path"
+  println " WARNING: expecting input vcf to have path dx://project-xxxx:/path/to/folder"
+  println " WARNING: attempting to add dx:// to start of string"
+  mutec2_path = "$mutec2_path".replaceFirst(/^(.*?)project/, 'dx://project')
+  println "$mutec2_path"
+  }
+
+if ( !"$pindel_path".startsWith('dx://') ) {
+  println "$pindel_path"
+  println " WARNING: expecting input vcf to have path dx://project-xxxx:/path/to/folder"
+  println " WARNING: attempting to add dx:// to start of string"
+  pindel_path = "$pindel_path".replaceFirst(/^(.*?)project/, 'dx://project')
+  println "$pindel_path"
+  }
+
+  // needs to be dx:// otherwise nextflow throws errors here for it not being a path
+  // Cannot a find a file system provider for scheme: project-GkYP7j04F2bPqzq0q881gZk2
   vcf_pairs_ch = channel.fromFilePairs( ["$mutec2_path", "$pindel_path"], size: -1)
-
-  // I want to have a channel of pairs of these
 
   // run the tool
   VCF_HANDLER(vcf_pairs_ch, params.mutect2_bed, params.pindel_bed, params.mutect2_fasta, params.mutect2_fai, params.vep_docker_image, params.vep_plugins, params.vep_refs, params.vep_annotation, params.maf_file, params.maf_file_tbi, params.mutec2_vcf_path, params.pindel_vcf_path, params.python_packages)
